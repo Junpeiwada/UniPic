@@ -22,6 +22,17 @@
   "build": {
     "appId": "com.unipic.app",
     "productName": "UniPic",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.ts",
+      "!**/*.md"
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**/*"
+    ],
     "mac": {
       "icon": "icon/icon.png",
       "category": "public.app-category.photography"
@@ -39,6 +50,6 @@
   },
   "dependencies": {
     "crypto": "^1.0.1",
-    "sharp": "^0.33.0"
+    "sharp": "^0.33.5"
   }
 }

@@ -4,6 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const os = require('os');
+const { Worker } = require('worker_threads');
 
 let mainWindow;
 
@@ -170,69 +171,115 @@ function hammingDistance(hash1, hash2) {
   return distance;
 }
 
-// 並列処理でファイルを処理
-async function processFilesBatch(files, batchSize = 10) {
-  const results = [];
-  const total = files.length;
-  let processed = 0;
-
-  for (let i = 0; i < files.length; i += batchSize) {
-    const batch = files.slice(i, i + batchSize);
-    
-    // バッチを並列処理
-    const batchPromises = batch.map(async (filePath) => {
-      try {
-        const fileHash = calculateFileHash(filePath);
-        const pHash = await calculatePHash(filePath);
-        
-        processed++;
-        
-        // 進捗を送信
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('hash-progress', {
-            current: processed,
-            total: total,
-            currentFile: path.basename(filePath),
-            percentage: Math.round((processed / total) * 100)
-          });
-        }
-        
-        if (pHash) {
-          return {
-            path: filePath,
-            fileHash: fileHash,
-            pHash: pHash
-          };
-        }
-        return null;
-      } catch (error) {
-        console.error(`Error processing file ${filePath}:`, error);
-        processed++;
-        
-        // エラーでも進捗を更新
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('hash-progress', {
-            current: processed,
-            total: total,
-            currentFile: path.basename(filePath),
-            percentage: Math.round((processed / total) * 100),
-            error: true
-          });
-        }
-        
-        return null;
-      }
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults.filter(result => result !== null));
-    
-    // バッチ間で少し待機（メモリ負荷軽減）
-    if (i + batchSize < files.length) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
+// Worker Threadsを使用した並列処理（Sharp版、最適化）
+async function processFilesWithWorkers(files) {
+  const startTime = Date.now();
+  const cpuCount = os.cpus().length;
+  
+  // ファイル数に基づいてワーカー数を動的調整
+  let workerCount;
+  if (files.length < 20) {
+    workerCount = Math.min(2, cpuCount); // 少ないファイルは2ワーカーまで
+  } else if (files.length < 100) {
+    workerCount = Math.min(4, cpuCount); // 中程度は4ワーカーまで
+  } else {
+    workerCount = Math.min(cpuCount, 8); // 大量ファイルは最大8ワーカー
   }
-
+  
+  const filesPerWorker = Math.ceil(files.length / workerCount);
+  
+  console.log(`[Main] Sharp マルチスレッド処理開始: ${workerCount}ワーカー (CPU:${cpuCount}コア), ${files.length}ファイル, ワーカーあたり平均:${filesPerWorker}ファイル`);
+  
+  const results = [];
+  let processedCount = 0;
+  const total = files.length;
+  let totalProcessingTime = 0;
+  
+  // ワーカーを作成してファイルを分散処理
+  const workerPromises = [];
+  
+  for (let i = 0; i < workerCount; i++) {
+    const startIndex = i * filesPerWorker;
+    const endIndex = Math.min(startIndex + filesPerWorker, files.length);
+    const workerFiles = files.slice(startIndex, endIndex);
+    
+    if (workerFiles.length === 0) continue;
+    
+    const workerPromise = new Promise((resolve, reject) => {
+      const workerStartTime = Date.now();
+      const worker = new Worker(path.join(__dirname, 'hash-worker.js'), {
+        workerData: { files: workerFiles }
+      });
+      
+      console.log(`[Main] Worker ${i+1} 開始: ${workerFiles.length}ファイル (${startIndex}-${endIndex-1})`);
+      
+      worker.on('message', (message) => {
+        if (message.type === 'progress') {
+          processedCount++;
+          if (message.processingTime) {
+            totalProcessingTime += message.processingTime;
+          }
+          
+          // 10ファイルごとにログ出力
+          if (processedCount % 10 === 0) {
+            const avgTime = totalProcessingTime / processedCount;
+            const remaining = total - processedCount;
+            const estimatedRemaining = (remaining * avgTime) / 1000;
+            console.log(`[Main] 進捗: ${processedCount}/${total} (${Math.round(processedCount/total*100)}%) - 平均:${Math.round(avgTime)}ms/ファイル, 残り推定:${Math.round(estimatedRemaining)}秒`);
+          }
+          
+          // 進捗を送信
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('hash-progress', {
+              current: processedCount,
+              total: total,
+              currentFile: path.basename(message.filePath),
+              percentage: Math.round((processedCount / total) * 100),
+              error: message.error || false
+            });
+          }
+        } else if (message.type === 'completed') {
+          const workerTime = Date.now() - workerStartTime;
+          console.log(`[Main] Worker ${i+1} 完了: ${message.results.length}ファイル処理済み (${workerTime}ms)`);
+          worker.terminate();
+          resolve(message.results);
+        }
+      });
+      
+      worker.on('error', (error) => {
+        console.error(`Worker ${i+1} error:`, error);
+        worker.terminate();
+        reject(error);
+      });
+      
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          console.error(`Worker ${i+1} stopped with exit code ${code}`);
+        }
+      });
+    });
+    
+    workerPromises.push(workerPromise);
+  }
+  
+  // すべてのワーカーの完了を待つ
+  const workerResults = await Promise.all(workerPromises);
+  
+  // 結果をまとめる
+  for (const workerResult of workerResults) {
+    results.push(...workerResult);
+  }
+  
+  const totalTime = Date.now() - startTime;
+  const avgTime = totalProcessingTime / total;
+  const efficiency = totalProcessingTime / (totalTime * workerCount) * 100;
+  
+  console.log(`[Main] Sharp マルチスレッド処理完了: ${results.length}ファイル処理済み`);
+  console.log(`[Main] 総時間: ${totalTime}ms (${Math.round(totalTime/1000)}秒)`);
+  console.log(`[Main] 平均ファイル処理時間: ${Math.round(avgTime)}ms`);
+  console.log(`[Main] スループット: ${Math.round(total/(totalTime/1000))}ファイル/秒`);
+  console.log(`[Main] ワーカー効率: ${Math.round(efficiency)}% (理想値: ${workerCount*100}%)`);
+  
   return results;
 }
 
@@ -251,12 +298,8 @@ ipcMain.handle('find-duplicates', async (event, imageFiles, similarityThreshold 
     });
   }
   
-  // 並列処理でハッシュ計算
-  const cpuCount = os.cpus().length;
-  const batchSize = Math.max(1, Math.floor(cpuCount * 2)); // CPU数の2倍のバッチサイズ
-  console.log(`並列処理: ${cpuCount}コア、バッチサイズ: ${batchSize}`);
-  
-  const fileData = await processFilesBatch(imageFiles, batchSize);
+  // Worker Threadsでハッシュ計算
+  const fileData = await processFilesWithWorkers(imageFiles);
   
   // 重複検出フェーズ
   if (mainWindow && !mainWindow.isDestroyed()) {
