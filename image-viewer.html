@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>UniPic - 画像ビューア</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+        .viewer-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            min-height: 100vh;
+            max-height: 100vh;
+        }
+        .viewer-header {
+            background-color: #2a2a2a;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #444;
+        }
+        .viewer-title {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .viewer-controls {
+            display: flex;
+            gap: 10px;
+        }
+        .control-btn {
+            background-color: #007acc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .control-btn:hover {
+            background-color: #005a9c;
+        }
+        .control-btn:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        .delete-btn {
+            background-color: #dc3545;
+        }
+        .delete-btn:hover {
+            background-color: #c82333;
+        }
+        .viewer-content {
+            flex: 1;
+            display: flex;
+            position: relative;
+            min-height: 0; /* フレックスアイテムの高さを適切に計算 */
+        }
+        .image-display {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #000;
+            position: relative;
+            overflow: hidden;
+            min-height: 0; /* フレックスアイテムの高さを適切に計算 */
+            height: 100%; /* 親要素の高さを継承 */
+        }
+        .main-image {
+            max-width: calc(100% - 20px); /* パディングを考慮 */
+            max-height: calc(100% - 20px); /* パディングを考慮 */
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            transition: all 0.3s ease;
+        }
+        .main-image.zoomed {
+            max-width: none;
+            max-height: none;
+            object-fit: none;
+            cursor: zoom-out;
+        }
+        .main-image.fitted {
+            cursor: zoom-in;
+        }
+        .navigation {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            border: none;
+            color: white;
+            padding: 20px 15px;
+            cursor: pointer;
+            font-size: 24px;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .navigation:hover {
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+        .navigation:disabled {
+            background-color: rgba(0, 0, 0, 0.3);
+            cursor: not-allowed;
+        }
+        .nav-prev {
+            left: 20px;
+        }
+        .nav-next {
+            right: 20px;
+        }
+        .image-info-panel {
+            width: 300px;
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-left: 1px solid #444;
+            overflow-y: auto;
+        }
+        .image-info-section {
+            margin-bottom: 20px;
+        }
+        .image-info-section h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #ccc;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .image-info-item {
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .image-info-label {
+            color: #888;
+            display: inline-block;
+            width: 80px;
+        }
+        .image-info-value {
+            color: #fff;
+            word-break: break-all;
+        }
+        .counter {
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="viewer-container">
+        <div class="viewer-header">
+            <div class="viewer-title">画像ビューア</div>
+            <div class="viewer-controls">
+                <span id="imageCounter" class="counter">1 / 1</span>
+                <button id="deleteBtn" class="control-btn delete-btn">削除</button>
+                <button id="closeBtn" class="control-btn">閉じる</button>
+            </div>
+        </div>
+        
+        <div class="viewer-content">
+            <div class="image-display">
+                <img id="mainImage" class="main-image" alt="画像">
+                <button id="prevBtn" class="navigation nav-prev">‹</button>
+                <button id="nextBtn" class="navigation nav-next">›</button>
+            </div>
+            
+            <div class="image-info-panel">
+                <div class="image-info-section">
+                    <h3>ファイル情報</h3>
+                    <div class="image-info-item">
+                        <span class="image-info-label">ファイル名:</span>
+                        <span id="fileName" class="image-info-value">-</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">サイズ:</span>
+                        <span id="fileSize" class="image-info-value">-</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">更新日時:</span>
+                        <span id="modifiedDate" class="image-info-value">-</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">作成日時:</span>
+                        <span id="createdDate" class="image-info-value">-</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">パス:</span>
+                        <span id="filePath" class="image-info-value">-</span>
+                    </div>
+                </div>
+                
+                <div class="image-info-section">
+                    <h3>画像情報</h3>
+                    <div class="image-info-item">
+                        <span class="image-info-label">解像度:</span>
+                        <span id="imageResolution" class="image-info-value">-</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">形式:</span>
+                        <span id="imageFormat" class="image-info-value">-</span>
+                    </div>
+                </div>
+                
+                <div class="image-info-section">
+                    <h3>キーボードショートカット</h3>
+                    <div class="image-info-item">
+                        <span class="image-info-label">← / A:</span>
+                        <span class="image-info-value">前の画像</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">→ / D:</span>
+                        <span class="image-info-value">次の画像</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">Delete:</span>
+                        <span class="image-info-value">削除</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">Space:</span>
+                        <span class="image-info-value">ズーム切替</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">F:</span>
+                        <span class="image-info-value">フルスクリーン</span>
+                    </div>
+                    <div class="image-info-item">
+                        <span class="image-info-label">Esc:</span>
+                        <span class="image-info-value">閉じる</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="image-viewer.js"></script>
+</body>
+</html>

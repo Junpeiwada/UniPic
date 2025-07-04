@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>UniPic - 写真重複検出・削除ツール</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1500px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            align-items: center;
+        }
+        button {
+            padding: 12px 24px;
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #005a9c;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background-color: #e8f4f8;
+            border-left: 4px solid #007acc;
+        }
+        .duplicates-container {
+            margin-top: 30px;
+        }
+        .duplicate-group {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .duplicate-images {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .image-item {
+            text-align: center;
+            flex: 1;
+            max-width: 550px;
+            min-width: 400px;
+        }
+        .image-item img {
+            max-width: 500px;
+            max-height: 400px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            object-fit: contain;
+        }
+        .image-info {
+            margin-top: 15px;
+            font-size: 13px;
+            color: #666;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            text-align: left;
+        }
+        .delete-btn {
+            background-color: #dc3545;
+            margin-top: 10px;
+        }
+        .delete-btn:hover {
+            background-color: #c82333;
+        }
+        .selected-folder {
+            color: #007acc;
+            font-weight: bold;
+        }
+        .progress {
+            margin: 20px 0;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #007acc;
+            transition: width 0.3s ease;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .progress-text {
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            position: absolute;
+            width: 100%;
+            text-align: center;
+        }
+        .drop-zone {
+            border: 2px dashed #007acc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #f8f9fa;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            background-color: #e3f2fd;
+            border-color: #0056b3;
+        }
+        .drop-zone-text {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        .drop-zone-subtext {
+            color: #999;
+            font-size: 14px;
+        }
+        .rescan-btn {
+            background-color: #28a745;
+        }
+        .rescan-btn:hover {
+            background-color: #218838;
+        }
+        .similarity-settings {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .similarity-settings label {
+            font-weight: bold;
+            color: #495057;
+        }
+        #similaritySlider {
+            width: 200px;
+        }
+        #similarityValue {
+            font-weight: bold;
+            color: #007acc;
+            min-width: 20px;
+        }
+        .similarity-hint {
+            color: #6c757d;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>UniPic - 写真重複検出・削除ツール</h1>
+        
+        <div id="dropZone" class="drop-zone">
+            <div class="drop-zone-text">📁 フォルダをここにドラッグ＆ドロップ</div>
+            <div class="drop-zone-subtext">または下のボタンでフォルダを選択してください</div>
+        </div>
+        
+        <div class="controls">
+            <button id="selectFolderBtn">フォルダを選択</button>
+            <button id="scanBtn" disabled>スキャン開始</button>
+            <button id="rescanBtn" class="rescan-btn" disabled>再スキャン</button>
+            <span id="selectedFolder" class="selected-folder"></span>
+        </div>
+        
+        <div class="similarity-settings">
+            <label for="similaritySlider">類似度感度:</label>
+            <input type="range" id="similaritySlider" min="0" max="20" value="10" step="1">
+            <span id="similarityValue">10</span>
+            <span class="similarity-hint">(0=厳密, 20=緩い)</span>
+        </div>
+        
+        <div id="status" class="status" style="display: none;"></div>
+        
+        <div id="progress" class="progress" style="display: none;">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%;">
+                    <span id="progressText" class="progress-text">0%</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="duplicatesContainer" class="duplicates-container"></div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

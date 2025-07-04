@@ -1,0 +1,44 @@
+{
+  "name": "unipic",
+  "version": "1.0.0",
+  "description": "写真ファイルの重複を検出・削除するElectronアプリ",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "build-mac": "electron-builder --mac",
+    "build-win": "electron-builder --win",
+    "build-linux": "electron-builder --linux"
+  },
+  "keywords": [
+    "electron",
+    "photo",
+    "duplicate",
+    "image"
+  ],
+  "author": "",
+  "license": "MIT",
+  "build": {
+    "appId": "com.unipic.app",
+    "productName": "UniPic",
+    "mac": {
+      "icon": "icon/icon.png",
+      "category": "public.app-category.photography"
+    },
+    "win": {
+      "icon": "icon/icon.png"
+    },
+    "linux": {
+      "icon": "icon/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "crypto": "^1.0.1",
+    "sharp": "^0.33.0"
+  }
+}
