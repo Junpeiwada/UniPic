@@ -4,6 +4,48 @@ const crypto = require('crypto');
 const sharp = require('sharp');
 const path = require('path');
 
+// Workerのエラーハンドリング
+process.on('uncaughtException', (error) => {
+  console.error('[Worker] Uncaught Exception:', error);
+  console.error('[Worker] Stack:', error.stack);
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'error',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Worker] Unhandled Rejection at:', promise, 'reason:', reason);
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'error',
+      error: reason.message || reason,
+      stack: reason.stack
+    });
+  }
+});
+
+console.log('[Worker] Worker スレッド開始');
+
+// Sharp の動作確認
+try {
+  console.log('[Worker] Sharp バージョン:', sharp.versions);
+  console.log('[Worker] Sharp プラットフォーム:', sharp.platform());
+} catch (error) {
+  console.error('[Worker] Sharp 初期化エラー:', error);
+  if (parentPort) {
+    parentPort.postMessage({
+      type: 'error',
+      error: `Sharp initialization failed: ${error.message}`,
+      stack: error.stack
+    });
+  }
+}
+
 // ファイルのハッシュ値を計算
 function calculateFileHash(filePath) {
   const fileBuffer = fs.readFileSync(filePath);
@@ -15,6 +57,7 @@ function calculateFileHash(filePath) {
 // pHashを計算する関数（Sharp使用、最適化版）
 async function calculatePHash(filePath) {
   try {
+    console.log(`[Worker] Sharp処理開始: ${path.basename(filePath)}`);
     // Sharpで画像を32x32のグレースケールに変換し、ピクセルデータを取得
     const { data, info } = await sharp(filePath)
       .resize(32, 32)

@@ -6,10 +6,12 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder",
-    "build-mac": "electron-builder --mac",
-    "build-win": "electron-builder --win",
-    "build-linux": "electron-builder --linux"
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-rebuild -f -w sharp",
+    "build": "npm run rebuild && electron-builder",
+    "build-mac": "npm run rebuild && electron-builder --mac",
+    "build-win": "npm run rebuild && electron-builder --win",
+    "build-linux": "npm run rebuild && electron-builder --linux"
   },
   "keywords": [
     "electron",
@@ -31,7 +33,8 @@
       "!**/*.md"
     ],
     "asarUnpack": [
-      "node_modules/sharp/**/*"
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
     ],
     "mac": {
       "icon": "icon/icon.png",
@@ -45,6 +48,7 @@
     }
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
     "electron": "^27.0.0",
     "electron-builder": "^24.6.4"
   },

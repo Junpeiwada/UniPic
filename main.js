@@ -8,6 +8,16 @@ const { Worker } = require('worker_threads');
 
 let mainWindow;
 
+// エラーハンドリングとログ設定
+process.on('uncaughtException', (error) => {
+  console.error('[Main] Uncaught Exception:', error);
+  console.error('[Main] Stack:', error.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Main] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 function createWindow() {
   const iconPath = path.join(__dirname, 'icon', 'icon.png');
   console.log('Icon path:', iconPath);
@@ -207,56 +217,69 @@ async function processFilesWithWorkers(files) {
     
     const workerPromise = new Promise((resolve, reject) => {
       const workerStartTime = Date.now();
-      const worker = new Worker(path.join(__dirname, 'hash-worker.js'), {
-        workerData: { files: workerFiles }
-      });
+      const workerPath = path.join(__dirname, 'hash-worker.js');
       
-      console.log(`[Main] Worker ${i+1} 開始: ${workerFiles.length}ファイル (${startIndex}-${endIndex-1})`);
+      console.log(`[Main] Worker ${i+1} パス: ${workerPath}`);
+      console.log(`[Main] Worker ${i+1} パス存在確認: ${fs.existsSync(workerPath)}`);
       
-      worker.on('message', (message) => {
-        if (message.type === 'progress') {
-          processedCount++;
-          if (message.processingTime) {
-            totalProcessingTime += message.processingTime;
+      try {
+        const worker = new Worker(workerPath, {
+          workerData: { files: workerFiles }
+        });
+        
+        console.log(`[Main] Worker ${i+1} 開始: ${workerFiles.length}ファイル (${startIndex}-${endIndex-1})`);
+        
+        worker.on('message', (message) => {
+          if (message.type === 'progress') {
+            processedCount++;
+            if (message.processingTime) {
+              totalProcessingTime += message.processingTime;
+            }
+            
+            // 10ファイルごとにログ出力
+            if (processedCount % 10 === 0) {
+              const avgTime = totalProcessingTime / processedCount;
+              const remaining = total - processedCount;
+              const estimatedRemaining = (remaining * avgTime) / 1000;
+              console.log(`[Main] 進捗: ${processedCount}/${total} (${Math.round(processedCount/total*100)}%) - 平均:${Math.round(avgTime)}ms/ファイル, 残り推定:${Math.round(estimatedRemaining)}秒`);
+            }
+            
+            // 進捗を送信
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('hash-progress', {
+                current: processedCount,
+                total: total,
+                currentFile: path.basename(message.filePath),
+                percentage: Math.round((processedCount / total) * 100),
+                error: message.error || false
+              });
+            }
+          } else if (message.type === 'completed') {
+            const workerTime = Date.now() - workerStartTime;
+            console.log(`[Main] Worker ${i+1} 完了: ${message.results.length}ファイル処理済み (${workerTime}ms)`);
+            worker.terminate();
+            resolve(message.results);
           }
-          
-          // 10ファイルごとにログ出力
-          if (processedCount % 10 === 0) {
-            const avgTime = totalProcessingTime / processedCount;
-            const remaining = total - processedCount;
-            const estimatedRemaining = (remaining * avgTime) / 1000;
-            console.log(`[Main] 進捗: ${processedCount}/${total} (${Math.round(processedCount/total*100)}%) - 平均:${Math.round(avgTime)}ms/ファイル, 残り推定:${Math.round(estimatedRemaining)}秒`);
-          }
-          
-          // 進捗を送信
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('hash-progress', {
-              current: processedCount,
-              total: total,
-              currentFile: path.basename(message.filePath),
-              percentage: Math.round((processedCount / total) * 100),
-              error: message.error || false
-            });
-          }
-        } else if (message.type === 'completed') {
-          const workerTime = Date.now() - workerStartTime;
-          console.log(`[Main] Worker ${i+1} 完了: ${message.results.length}ファイル処理済み (${workerTime}ms)`);
+        });
+        
+        worker.on('error', (error) => {
+          console.error(`[Main] Worker ${i+1} error:`, error);
+          console.error(`[Main] Worker ${i+1} error stack:`, error.stack);
           worker.terminate();
-          resolve(message.results);
-        }
-      });
-      
-      worker.on('error', (error) => {
-        console.error(`Worker ${i+1} error:`, error);
-        worker.terminate();
+          reject(error);
+        });
+        
+        worker.on('exit', (code) => {
+          if (code !== 0) {
+            console.error(`[Main] Worker ${i+1} stopped with exit code ${code}`);
+          }
+        });
+        
+      } catch (error) {
+        console.error(`[Main] Worker ${i+1} 作成エラー:`, error);
+        console.error(`[Main] Worker ${i+1} 作成エラースタック:`, error.stack);
         reject(error);
-      });
-      
-      worker.on('exit', (code) => {
-        if (code !== 0) {
-          console.error(`Worker ${i+1} stopped with exit code ${code}`);
-        }
-      });
+      }
     });
     
     workerPromises.push(workerPromise);
