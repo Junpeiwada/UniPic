@@ -97,6 +97,46 @@ UniPicは、重複画像の検出と削除を行うElectronベースのデスク
 - メインウィンドウと画像ビューアウィンドウの両方にアイコンを設定
 - ICNSファイルよりもPNGファイルの方が安定して動作
 
+**Sharp依存関係の課題と解決**
+
+Sharp（ネイティブ画像処理ライブラリ）をElectronアプリでビルドする際に遭遇した問題と解決方法：
+
+*主な問題:*
+- ビルド済みアプリで「Could not load the "sharp" module using the darwin-arm64 runtime」エラー
+- libvips-cpp.42.dylibが見つからないエラー
+- Sharpのネイティブバイナリがアプリパッケージに正しく含まれない
+
+*試行した解決方法:*
+1. **asarUnpack設定**: `node_modules/sharp/**/*`をasar外に配置
+2. **electron-builder install-app-deps**: 依存関係の自動処理
+3. **@electron/rebuild**: 最新の推奨ツールに移行
+4. **ビルド前の強制再ビルド**: `npm run rebuild`でSharpを毎回再構築
+
+*最終的な解決方法:*
+```json
+{
+  "scripts": {
+    "rebuild": "electron-rebuild -f -w sharp",
+    "build-mac": "npm run rebuild && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2"
+  },
+  "build": {
+    "asarUnpack": [
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
+    ]
+  }
+}
+```
+
+*重要なポイント:*
+- ビルド前に必ず`electron-rebuild -f -w sharp`を実行
+- asarUnpackでSharp関連モジュールを全て除外
+- @electron/rebuildが推奨（electron-rebuildは非推奨）
+- JimpからSharpに移行する場合は、Sharpの方が高速だがビルド設定が複雑
+
 **ビルド設定**
 - electron-builderを使用してクロスプラットフォームビルドを実行
 - ビルド出力は`dist/`フォルダに生成される
